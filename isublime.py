@@ -87,17 +87,17 @@ class PyiCloudService(_PyiCloudService):
                                             resolve_path=True,
                                             path_type=Path))
 @click.argument('path_dst', type=click.Path())
-# @click.option('--email', prompt=True,
-#                          envvar='ISUBLIME_EMAIL')
-# @click.option('--password', prompt=True,
-#                             hide_input=True)
+@click.option('--email', prompt=True,
+                         envvar='ISUBLIME_EMAIL')
+@click.option('--password', prompt=True,
+                            hide_input=True,
+                            envvar='ISUBLIME_PASSWORD')
 @click.option('--log-level', type=click.Choice(['debug', 'info', 'warning', 'error'],
                                                case_sensitive=False),
                              default='info',
                              show_default=True,
                              envvar='ISUBLIME_LOG_LEVEL')
-def main(path_src, path_dst, log_level,
-         email='mail@honzajavorek.cz', password='...'):
+def main(path_src, path_dst, log_level, email, password):
     logging.basicConfig(level=log_level.upper(),
                         format='[%(name)s] %(levelname)s: %(message)s')
     logger.info(f"Syncing files from {path_src} to (iCloud)/{path_dst.lstrip('/')}")
