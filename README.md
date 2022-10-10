@@ -8,6 +8,4 @@ With iSublime, I can connect my external hard drive and backup some files to my 
 
 ## TODO
 
-- [ ] first it should read files from disk, identify folders, create them remotely, then sync files
-- [ ] super slow
 - [ ] won't delete any files or dirs on iCloud
