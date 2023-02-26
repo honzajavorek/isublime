@@ -14,6 +14,8 @@ IGNORED = ('.DS_Store', )
 
 JOBS_BATCH = 5
 
+NODE_CREATION_POLLING_WAIT_SEC = 1
+
 
 monkey.patch_socket()
 
@@ -73,7 +75,7 @@ def main(path_src, path_dst, log_level, email, password):
         job = gevent.spawn(sync, api.drive, path_src, path_dst, path)
         jobs.append(job)
 
-        if len(jobs) >= JOBS_BATCH:
+        if len(jobs) == len(paths) or len(jobs) >= JOBS_BATCH:
             logger.debug(f'Waiting for a batch of {len(jobs)} jobs')
             gevent.joinall(jobs)
             jobs = []
@@ -89,10 +91,23 @@ def sync(icloud, path_src, path_dst, path):
         try:
             icloud = icloud[part]
         except KeyError:
+            logger.debug(f'Node {part!r} does not exist, creating')
             icloud.mkdir(part)
-            icloud.data.pop('items', None)  # flushing cache of the node ¯\_(ツ)_/¯
-            icloud._children = None  # flushing cache of the node ¯\_(ツ)_/¯
-            icloud = icloud[part]
+            while True:
+                if hasattr(icloud, 'root'):
+                    logger.debug(f'Flushing cache of the root node {icloud.root!r}')
+                    icloud._root = None
+                else:
+                    logger.debug(f'Flushing cache of the parent node {icloud!r}')
+                    icloud.data.pop('items', None)
+                    icloud._children = None
+                try:
+                    logger.debug(f'Getting node {part!r}')
+                    icloud = icloud[part]
+                    break
+                except KeyError:
+                    logger.debug(f'Node {part!r} not yet created, waiting')
+                    gevent.sleep(NODE_CREATION_POLLING_WAIT_SEC)
 
     if path.is_file():
         try:
