@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from pyicloud.exceptions import PyiCloudAPIResponseException
 import gevent
 from gevent import monkey
 import click
@@ -82,48 +83,54 @@ def main(path_src, path_dst, log_level, email, password):
 
 
 def sync(icloud, path_src, path_dst, path):
-    logger.info(path)
-    path_relative = path.relative_to(path_src)
-    dir_dst = path_relative if path.is_dir() else path_relative.parent
+    try:
+        logger.info(path)
+        path_relative = path.relative_to(path_src)
+        dir_dst = path_relative if path.is_dir() else path_relative.parent
 
-    logger.info(f'Ensuring (iCloud)/{path_dst}/{dir_dst}')
-    for part in (Path(path_dst).parts + dir_dst.parts):
-        try:
-            icloud = icloud[part]
-        except KeyError:
-            logger.debug(f'Node {part!r} does not exist, creating')
-            icloud.mkdir(part)
-            while True:
-                if hasattr(icloud, 'root'):
-                    logger.debug(f'Flushing cache of the root node {icloud.root!r}')
-                    icloud._root = None
-                else:
-                    logger.debug(f'Flushing cache of the parent node {icloud!r}')
-                    icloud.data.pop('items', None)
-                    icloud._children = None
-                try:
-                    logger.debug(f'Getting node {part!r}')
-                    icloud = icloud[part]
-                    break
-                except KeyError:
-                    logger.debug(f'Node {part!r} not yet created, waiting')
-                    gevent.sleep(NODE_CREATION_POLLING_WAIT_SEC)
+        logger.info(f'Ensuring (iCloud)/{path_dst}/{dir_dst}')
+        icloud_node = icloud
+        for part in (Path(path_dst).parts + dir_dst.parts):
+            try:
+                icloud_node = icloud_node[part]
+            except KeyError:
+                logger.debug(f'Node {part!r} does not exist, creating')
+                icloud_node.mkdir(part)
+                while True:
+                    if hasattr(icloud_node, 'root'):
+                        logger.debug(f'Flushing cache of the root node {icloud_node.root!r}')
+                        icloud_node._root = None
+                    else:
+                        logger.debug(f'Flushing cache of the parent node {icloud_node!r}')
+                        icloud_node.data.pop('items', None)
+                        icloud_node._children = None
+                    try:
+                        logger.debug(f'Getting node {part!r}')
+                        icloud_node = icloud_node[part]
+                        break
+                    except KeyError:
+                        logger.debug(f'Node {part!r} not yet created, waiting')
+                        gevent.sleep(NODE_CREATION_POLLING_WAIT_SEC)
 
-    if path.is_file():
-        try:
-            icloud_file = icloud[path.name]
-        except KeyError:
-            logger.info(f'Uploading (iCloud)/{path_dst}/{path_relative}')
-            with path.open(mode='rb') as f:
-                icloud.upload(f)
-        else:
-            path_stat = path.stat()
-            should_overwrite = (path_stat.st_size != icloud_file.size or
-                                datetime.fromtimestamp(path_stat.st_mtime) > icloud_file.date_modified)
-            if should_overwrite:
-                logger.info(f'Overwriting (iCloud)/{path_dst}/{path_relative}')
-                icloud_file.delete()
+        if path.is_file():
+            try:
+                icloud_file = icloud_node[path.name]
+            except KeyError:
+                logger.info(f'Uploading (iCloud)/{path_dst}/{path_relative}')
                 with path.open(mode='rb') as f:
-                    icloud.upload(f)
+                    icloud_node.upload(f)
             else:
-                logger.info(f'Keeping (iCloud)/{path_dst}/{path_relative}')
+                path_stat = path.stat()
+                should_overwrite = (path_stat.st_size != icloud_file.size or
+                                    datetime.fromtimestamp(path_stat.st_mtime) > icloud_file.date_modified)
+                if should_overwrite:
+                    logger.info(f'Overwriting (iCloud)/{path_dst}/{path_relative}')
+                    icloud_file.delete()
+                    with path.open(mode='rb') as f:
+                        icloud_node.upload(f)
+                else:
+                    logger.info(f'Keeping (iCloud)/{path_dst}/{path_relative}')
+    except PyiCloudAPIResponseException as e:
+        logger.error(str(e))
+        logger.warning('Retrying')
+        return sync(icloud, path_src, path_dst, path)
