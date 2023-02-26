@@ -8,4 +8,5 @@ With iSublime, I can connect my external hard drive and backup some files to my 
 
 ## TODO
 
+- [ ] get username and password from keychain
 - [ ] won't delete any files or dirs on iCloud
