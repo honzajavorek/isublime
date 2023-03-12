@@ -2,6 +2,8 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
+import subprocess
+from functools import lru_cache
 
 from pyicloud.exceptions import PyiCloudAPIResponseException
 import gevent
@@ -13,14 +15,29 @@ from .icloud import PyiCloudService
 
 IGNORED = ('.DS_Store', )
 
-JOBS_BATCH = 5
+JOBS_BATCH = 10
 
 NODE_CREATION_POLLING_WAIT_SEC = 1
 
 
 monkey.patch_socket()
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('isublime')
+
+
+@lru_cache
+def op(item_name):
+    try:
+        proc = subprocess.run(['op', 'item', 'get', item_name,
+                               '--fields', 'label=username,label=password'],
+                              stdout=subprocess.PIPE,
+                              check=True)
+    except FileNotFoundError:
+        return dict(email=None, password=None)
+    else:
+        stdout = proc.stdout.decode('utf-8')
+        username, password = stdout.split(',')
+        return dict(email=username, password=password)
 
 
 @click.command()
@@ -29,21 +46,26 @@ logger = logging.getLogger(__name__)
                                             resolve_path=True,
                                             path_type=Path))
 @click.argument('path_dst', type=click.Path())
-@click.option('--email', prompt=True,
-                         envvar='ISUBLIME_EMAIL')
-@click.option('--password', prompt=True,
-                            hide_input=True,
+@click.option('--email', envvar='ISUBLIME_EMAIL')
+@click.option('--password', hide_input=True,
                             envvar='ISUBLIME_PASSWORD')
+@click.option('--op-item-name', default='Apple ID')
 @click.option('--log-level', type=click.Choice(['debug', 'info', 'warning', 'error'],
                                                case_sensitive=False),
                              default='info',
                              show_default=True,
                              envvar='ISUBLIME_LOG_LEVEL')
-def main(path_src, path_dst, log_level, email, password):
+def main(path_src, path_dst, log_level, email, password, op_item_name):
     logging.basicConfig(level=log_level.upper(),
                         format='[%(name)s] %(levelname)s: %(message)s')
-    logger.info(f"Syncing files from {path_src} to (iCloud)/{path_dst.lstrip('/')}")
+    email = email or op(op_item_name)['email']
+    if not email:
+        email = click.prompt('Apple ID e-mail')
+    password = password or op(op_item_name)['password']
+    if not password:
+        password = click.prompt('Apple ID password', hide_input=True)
 
+    logger.info(f"Syncing files from {path_src} to (iCloud)/{path_dst.lstrip('/')}")
     api = PyiCloudService(email, password)
     if api.requires_2fa:
         logger.info('2FA required')
