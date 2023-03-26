@@ -35,7 +35,7 @@ def op(item_name):
     except FileNotFoundError:
         return dict(email=None, password=None)
     else:
-        stdout = proc.stdout.decode('utf-8')
+        stdout = proc.stdout.decode('utf-8').strip()
         username, password = stdout.split(',')
         return dict(email=username, password=password)
 
@@ -58,12 +58,8 @@ def op(item_name):
 def main(path_src, path_dst, log_level, email, password, op_item_name):
     logging.basicConfig(level=log_level.upper(),
                         format='[%(name)s] %(levelname)s: %(message)s')
-    email = email or op(op_item_name)['email']
-    if not email:
-        email = click.prompt('Apple ID e-mail')
-    password = password or op(op_item_name)['password']
-    if not password:
-        password = click.prompt('Apple ID password', hide_input=True)
+    email = email or op(op_item_name)['email'] or click.prompt('Apple ID e-mail')
+    password = password or op(op_item_name)['password'] or click.prompt('Apple ID password', hide_input=True)
 
     logger.info(f"Syncing files from {path_src} to (iCloud)/{path_dst.lstrip('/')}")
     api = PyiCloudService(email, password)
